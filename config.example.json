@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "worker_name": "nexus",
+  "telegram": {
+    "enabled": true,
+    "bot_token": "123456789:PASTE_YOUR_BOT_TOKEN_FROM_BOTFATHER",
+    "chat_id": 0,
+    "report_interval_hours": 4
+  },
+  "hardware": {
+    "cpu": { "model": "AMD Ryzen 9 5950X", "threads": 32 },
+    "gpu": { "model": "NVIDIA RTX 3070", "count": 1 },
+    "hashrates": {
+      "randomx": 17500,
+      "kawpow": 30000000,
+      "autolykos2": 175000000,
+      "etchash": 61000000,
+      "zhash": 95,
+      "beamhash3": 40
+    },
+    "power_watts": {
+      "randomx": 140,
+      "kawpow": 130,
+      "autolykos2": 130,
+      "etchash": 130,
+      "zhash": 130,
+      "beamhash3": 130
+    }
+  },
+  "electricity_cost_kwh": 0.10,
+  "miners": {
+    "xmrig": "C:\\miners\\xmrig\\xmrig.exe",
+    "lolminer": "C:\\miners\\lolMiner\\lolMiner.exe",
+    "rigel": "C:\\miners\\rigel\\rigel.exe",
+    "srbminer": "",
+    "trex": ""
+  },
+  "coins": {
+    "XMR": { "wallet": "YOUR_OWN_XMR_WALLET", "pool": "pool.supportxmr.com:3333" },
+    "ZEPH": { "wallet": "YOUR_OWN_ZEPH_WALLET", "pool": "de.zephyr.herominers.com:1123" },
+    "RVN": { "wallet": "YOUR_OWN_RVN_WALLET", "pool": "rvn.2miners.com:6060" },
+    "ERG": { "wallet": "YOUR_OWN_ERG_WALLET", "pool": "erg.2miners.com:8888", "miner": "rigel" }
+  },
+  "switching": {
+    "threshold_percent": 7.0,
+    "confirmations": 2,
+    "check_interval_seconds": 180,
+    "min_runtime_minutes": 10,
+    "manual_hold_minutes": 60,
+    "min_volume_usd": 10000,
+    "spike_ratio": 1.6,
+    "mine_when_unprofitable": false
+  },
+  "donation_cycle": { "enabled": true, "percent": 1.0, "cycle_minutes": 600 },
+  "data_source": { "minerstat_api_key": "" }
+}

@@ -1,0 +1,22 @@
+# user secrets - never commit (holds the Telegram bot token and wallets)
+config.json
+config.json.tmp
+
+# runtime
+logs/
+miners/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# pyinstaller
+build/
+dist/
+*.spec
+
+# local reports / tooling / internal instructions
+CLAUDE.md
+threat-model/
+.claude/
