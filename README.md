@@ -73,7 +73,7 @@ NexusSwitch is **free, open-source and has no hidden fees**. If it makes you mon
 - 🧙 **2-minute setup wizard** — Telegram linking, hardware presets, wallets, pools and miner paths.
 - ⛏ **Works with** XMRig, lolMiner, Rigel, SRBMiner-Multi and T-Rex.
 
-**Algorithms:** RandomX · Equihash · Zhash · BeamHash III · ZelHash · KawPow · Autolykos2 · Etchash · AstroBWT · DynexSolve
+**Algorithms:** RandomX · KawPow · Autolykos2 · Etchash · BeamHash III · Zhash · ZelHash (Equihash, AstroBWT and DynexSolve are tracked too, but need your own miner + `args`)
 
 ## 🚀 Quick Start
 
@@ -174,7 +174,21 @@ Everything is in `config.json` (created by the wizard — see [`config.example.j
 }
 ```
 
-Placeholders: `{pool}` `{host}` `{port}` `{wallet}` `{worker}` `{algo}`.
+Placeholders: `{pool}` `{host}` `{port}` `{url}` `{wallet}` `{worker}` `{algo}` (`{pool}` is `host:port`, `{url}` is `stratum+tcp://host:port`).
+
+**TLS pools:** write the pool as `ssl://host:port` and NexusSwitch adds the right TLS option for the miner (`--tls`, `--tls on`, `--tls true` or a `stratum+ssl://` URL). Some ports only speak TLS — 2Miners Beam (`ssl://beam.2miners.com:5252`) is one.
+
+**Built-in command lines** (flags checked against each miner's documentation):
+
+| Miner | Algorithms | Command line |
+|---|---|---|
+| XMRig | RandomX (`rx/0`) | `-o {pool} -u {wallet} -p {worker} --rig-id {worker} -a rx/0 -k --no-color` |
+| lolMiner | BeamHash III, Zhash, ZelHash, Etchash, Autolykos2 | `--algo BEAM-III --pool {pool} --user {wallet}.{worker}` (`EQUI144_5` adds `--pers`) |
+| Rigel | KawPow, Autolykos2, Etchash | `-a kawpow -o {url} -u {wallet} -w {worker}` (+ `--coin rvn/quai/xna/erg`) |
+| T-Rex | KawPow, Autolykos2, Etchash | `-a kawpow -o {url} -u {wallet} -p x -w {worker}` |
+| SRBMiner-Multi | RandomX, KawPow, Autolykos2, Etchash | `--algorithm kawpow --pool {pool} --wallet {wallet}.{worker} --disable-cpu` |
+
+Coins that share a family name on the market feed but use a different miner algorithm (EPIC, XDAG, ETI under RandomX) are never started with the default template — give them their own `miner` + `args`.
 
 > Hashrate presets and default pools are starting points. Miner flags change between releases — check `logs/miner.log` if a coin does not start, and adjust `args` for your miner version.
 

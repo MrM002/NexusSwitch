@@ -56,10 +56,9 @@ GPU_PRESETS: dict[str, tuple[dict[str, float], float]] = {
 # (ticker, name, algorithm) offered in the coin picker
 POPULAR_COINS: list[tuple[str, str, str]] = [
     ("XMR", "Monero", "randomx"), ("ZEPH", "Zephyr", "randomx"),
-    ("RVN", "Ravencoin", "kawpow"), ("XNA", "Neurai", "kawpow"), ("NEOX", "Neoxa", "kawpow"),
+    ("RVN", "Ravencoin", "kawpow"), ("QUAI", "Quai", "kawpow"), ("XNA", "Neurai", "kawpow"),
     ("ERG", "Ergo", "autolykos2"), ("ETC", "Ethereum Classic", "etchash"),
-    ("BEAM", "Beam", "beamhash3"), ("BTG", "Bitcoin Gold", "zhash"),
-    ("DNX", "Dynex", "dynexsolve"), ("DERO", "Dero", "astrobwt"), ("ZEC", "Zcash", "equihash"),
+    ("BEAM", "Beam", "beamhash3"), ("ZEC", "Zcash", "equihash"),
 ]
 
 
@@ -236,8 +235,10 @@ def _coins(console: Console, cfg: dict[str, Any]) -> None:
             f"{tag} wallet address:", default=old.get("wallet", ""), style=STYLE,
             validate=lambda t: bool(re.fullmatch(r"[^\s-]\S{9,}", t.strip())) or "Enter a valid wallet address")).strip()
         pool = _ask(questionary.text(
-            f"{tag} pool (host:port):", default=old.get("pool") or config.DEFAULT_POOLS.get(tag, ""), style=STYLE,
-            validate=lambda t: bool(re.fullmatch(r"[A-Za-z0-9.-]+:\d{2,5}", t.strip())) or "Format: host:port")).strip()
+            f"{tag} pool (host:port, or ssl://host:port for TLS):", default=old.get("pool") or config.DEFAULT_POOLS.get(tag, ""), style=STYLE,
+            validate=lambda t: bool(re.fullmatch(
+                r"((ssl|tls|tcp|stratum\+(ssl|tls|tcp))://)?[A-Za-z0-9.-]+:\d{2,5}", t.strip()))
+            or "Format: host:port (or ssl://host:port)")).strip()
         coins[tag] = {**old, "wallet": wallet, "pool": pool}
     cfg["coins"] = coins
     console.print(f"[{ui.C_DIM}]More coins can be added by hand in config.json → \"coins\".[/]")

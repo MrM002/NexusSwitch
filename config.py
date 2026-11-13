@@ -36,20 +36,19 @@ ALGORITHMS: dict[str, str] = {
     "dynexsolve": "DynexSolve",
 }
 
-# Well-known public pools, used as editable defaults in the wizard.
+# Well-known public pools, used as editable defaults in the wizard. Every
+# entry answered a live stratum handshake when it was last checked (2026-11).
+# Prefix a pool with ssl:// when its port only speaks TLS.
 DEFAULT_POOLS: dict[str, str] = {
     "XMR": "pool.supportxmr.com:3333",
     "ZEPH": "de.zephyr.herominers.com:1123",
     "RVN": "rvn.2miners.com:6060",
     "XNA": "xna.2miners.com:6060",
-    "NEOX": "neox.2miners.com:4040",
+    "QUAI": "de.quai.herominers.com:1185",
     "ERG": "erg.2miners.com:8888",
     "ETC": "etc.2miners.com:1010",
-    "BEAM": "beam.2miners.com:5252",
-    "BTG": "btg.2miners.com:4040",
+    "BEAM": "ssl://beam.2miners.com:5252",   # 2Miners Beam is TLS-only
     "ZEC": "zec.2miners.com:1010",
-    "DNX": "de.dynex.herominers.com:1120",
-    "DERO": "de.dero.herominers.com:1117",
 }
 
 DEFAULT_CONFIG: dict[str, Any] = {
@@ -71,7 +70,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "electricity_cost_kwh": 0.0,
     "miners": {"xmrig": "", "lolminer": "", "rigel": "", "srbminer": "", "trex": ""},
-    # coin -> {"wallet": "...", "pool": "host:port", optional "miner", "args"}
+    # coin -> {"wallet": "...", "pool": "host:port" or "ssl://host:port", optional "miner", "args"}
     "coins": {},
     "switching": {
         "threshold_percent": 7.0,

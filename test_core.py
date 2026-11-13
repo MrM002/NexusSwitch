@@ -18,7 +18,7 @@ import config
 import donations
 import main as app_main
 import telegram_bot as tg
-from miner_manager import MinerError, MinerManager
+from miner_manager import ALGO_MINERS, MINERS, parse_pool, MinerError, MinerManager
 from profit_engine import Boost, CoinProfit, CoinQuote, ProfitEngine, SwitchDecider, canonical_algo, pick_anchor
 
 
@@ -77,6 +77,7 @@ def test_miner_plan() -> None:
     assert m.can_mine("RVN", "kawpow") == (False, "no wallet")
     cfg["coins"]["RVN"] = {"wallet": "RWallet1234567", "pool": "rvn.example.com:6060"}
     assert m.can_mine("RVN", "kawpow") == (False, "miner not installed")
+    assert m.can_mine("EPIC", "randomx")[0] is False   # RandomEpic is not rx/0
     cfg["coins"]["XMR"]["wallet"] = "--config=evil"   # option injection must be refused
     try:
         m.plan("XMR", "randomx")
@@ -111,6 +112,97 @@ async def _miner_lifecycle() -> None:
         await app.shutdown()
     assert not psutil.pid_exists(pid3), "miner survived shutdown"
     assert not MinerManager.cleanup_orphan()
+
+
+def test_miner_command_lines() -> None:
+    """Exact argv for every bundled miner/algorithm, as documented by each miner."""
+    cfg = config.default_config()
+    cfg["worker_name"] = "rig1"
+    for name in MINERS:
+        cfg["miners"][name] = sys.executable
+    pools = {"XMR": "pool.supportxmr.com:3333", "RVN": "rvn.2miners.com:6060", "QUAI": "de.quai.herominers.com:1185",
+             "ERG": "erg.2miners.com:8888", "ETC": "etc.2miners.com:1010", "BEAM": "ssl://beam.2miners.com:5252",
+             "BTCZ": "btcz.example.com:2053", "GLINK": "glink.example.com:3333", "FLUX": "flux.example.com:9090"}
+    for coin, pool in pools.items():
+        cfg["coins"][coin] = {"wallet": "W" + coin + "wallet123", "pool": pool}
+    m = MinerManager(cfg)
+
+    def argv(coin: str, algo: str, miner: str) -> str:
+        cfg["coins"][coin]["miner"] = miner
+        try:
+            return " ".join(m.plan(coin, algo).args)
+        finally:
+            del cfg["coins"][coin]["miner"]
+
+    expected = {
+        ("XMR", "randomx", "xmrig"): "-o pool.supportxmr.com:3333 -u WXMRwallet123 -p rig1 --rig-id rig1 -a rx/0 -k --no-color",
+        ("XMR", "randomx", "srbminer"): "--algorithm randomx --pool pool.supportxmr.com:3333 --wallet WXMRwallet123.rig1 --disable-gpu",
+        ("RVN", "kawpow", "rigel"): "-a kawpow -o stratum+tcp://rvn.2miners.com:6060 -u WRVNwallet123 -w rig1 --coin rvn",
+        ("QUAI", "kawpow", "rigel"): "-a kawpow -o stratum+tcp://de.quai.herominers.com:1185 -u WQUAIwallet123 -w rig1 --coin quai",
+        ("RVN", "kawpow", "trex"): "-a kawpow -o stratum+tcp://rvn.2miners.com:6060 -u WRVNwallet123 -p x -w rig1",
+        ("RVN", "kawpow", "srbminer"): "--algorithm kawpow --pool rvn.2miners.com:6060 --wallet WRVNwallet123.rig1 --disable-cpu",
+        ("ERG", "autolykos2", "rigel"): "-a autolykos2 -o stratum+tcp://erg.2miners.com:8888 -u WERGwallet123 -w rig1 --coin erg",
+        ("ERG", "autolykos2", "lolminer"): "--algo AUTOLYKOS2 --pool erg.2miners.com:8888 --user WERGwallet123.rig1",
+        ("ERG", "autolykos2", "trex"): "-a autolykos2 -o stratum+tcp://erg.2miners.com:8888 -u WERGwallet123 -p x -w rig1",
+        ("ERG", "autolykos2", "srbminer"): "--algorithm autolykos2 --pool erg.2miners.com:8888 --wallet WERGwallet123.rig1 --disable-cpu",
+        ("ETC", "etchash", "rigel"): "-a etchash -o stratum+tcp://etc.2miners.com:1010 -u WETCwallet123 -w rig1",
+        ("ETC", "etchash", "lolminer"): "--algo ETCHASH --pool etc.2miners.com:1010 --user WETCwallet123.rig1",
+        ("ETC", "etchash", "trex"): "-a etchash -o stratum+tcp://etc.2miners.com:1010 -u WETCwallet123 -p x -w rig1",
+        ("ETC", "etchash", "srbminer"): "--algorithm etchash --pool etc.2miners.com:1010 --wallet WETCwallet123.rig1 --disable-cpu",
+        ("BEAM", "beamhash3", "lolminer"): "--algo BEAM-III --pool beam.2miners.com:5252 --user WBEAMwallet123.rig1 --tls on",
+        ("BTCZ", "zhash", "lolminer"): "--algo EQUI144_5 --pool btcz.example.com:2053 --user WBTCZwallet123.rig1 --pers BitcoinZ",
+        ("GLINK", "zhash", "lolminer"): "--algo EQUI144_5 --pool glink.example.com:3333 --user WGLINKwallet123.rig1 --pers auto",
+        ("FLUX", "zelhash", "lolminer"): "--algo FLUX --pool flux.example.com:9090 --user WFLUXwallet123.rig1",
+    }
+    for (coin, algo, miner), want in expected.items():
+        got = argv(coin, algo, miner)
+        assert got == want, f"{miner}/{coin}: {got}"
+    # every miner listed for an algorithm really has a template for it
+    for algo, names in ALGO_MINERS.items():
+        for name in names:
+            assert algo in MINERS[name]["algos"], (algo, name)
+    # TLS pools switch each miner to its own TLS syntax
+    cfg["coins"]["XMR"]["pool"] = "ssl://pool.supportxmr.com:443"
+    assert argv("XMR", "randomx", "xmrig").endswith("--no-color --tls")
+    assert argv("XMR", "randomx", "srbminer").endswith("--tls true --disable-gpu")
+    cfg["coins"]["RVN"]["pool"] = "stratum+ssl://rvn.2miners.com:16060"
+    assert "-o stratum+ssl://rvn.2miners.com:16060" in argv("RVN", "kawpow", "rigel")
+    assert "-o stratum+ssl://rvn.2miners.com:16060" in argv("RVN", "kawpow", "trex")
+    assert parse_pool("stratum+tcp://a.b.com:1") == ("a.b.com", "1", False)
+    for bad in ("nohost", "host:port", "ssl://:443", "http://x/y:80", "-o:1"):
+        try:
+            parse_pool(bad)
+            raise AssertionError(f"accepted {bad!r}")
+        except MinerError:
+            pass
+    # default pools are all well-formed
+    for coin, pool in config.DEFAULT_POOLS.items():
+        parse_pool(pool)
+
+
+async def _healthy_first() -> None:
+    """Normal mode: flagged coins never outrank healthy ones on screen or in Telegram."""
+    console = Console(file=open("nul" if sys.platform == "win32" else "/dev/null", "w"), width=120)
+    app = app_main.NexusApp(config.default_config(), console)
+    try:
+        ranked = [_p("BTCZ", 9.0, "zhash"), _p("GLINK", 8.0, "zhash"), _p("BEAM", 3.5, "beamhash3"),
+                  _p("QUAI", 3.2, "kawpow"), _p("ERG", 2.2, "autolykos2"), _p("XNA", 2.1, "kawpow"),
+                  _p("ETC", 0.4, "etchash"), _p("RVN", 0.3, "kawpow"), _p("XMR", 0.2)]
+        for p in ranked:
+            p.quote.spike = p.coin in ("BTCZ", "GLINK", "XNA")
+        app.ranked, app.engine.last_update = ranked, time.time()   # fresh: no network refresh
+        assert [p.coin for p in app._top_view()[:5]] == ["BEAM", "QUAI", "ERG", "ETC", "RVN"]
+        assert [p.coin for p in app._top_view()[-3:]] == ["BTCZ", "GLINK", "XNA"]
+        top3 = await app.live_top_text(3)
+        assert "BEAM" in top3 and "BTCZ" not in top3 and "⚠" not in top3
+        app.ranked = ranked[:4]                      # fewer than 5 healthy: flagged fill the rest
+        assert [p.coin for p in app._top_view()] == ["BEAM", "QUAI", "BTCZ", "GLINK"]
+    finally:
+        await app.shutdown()
+
+
+def test_healthy_coins_first() -> None:
+    asyncio.run(_healthy_first())
 
 
 def test_miner_lifecycle() -> None:

@@ -141,11 +141,18 @@ class NexusApp:
             self.state.log(f"📌 Static-mining baseline for this session: {self.anchor}", ui.C_DIM)
         self._checks += 1
 
+    def _healthy_first(self) -> list[CoinProfit]:
+        """Ranking for display: trustworthy coins by profit, then the coins the
+        anti-spike filter flagged (they are never auto-mined, so they must not
+        push real candidates out of the Top 5)."""
+        return ([p for p in self.ranked if not p.quote.spike]
+                + [p for p in self.ranked if p.quote.spike])
+
     def _top_view(self) -> list[CoinProfit]:
         """Rows for the dashboard table. The demo shows the best trustworthy
         coin of each algorithm first so the multi-algorithm ranking is visible."""
         if not self.demo:
-            return self.ranked
+            return self._healthy_first()
         seen: set[str] = set()
         best = []
         for p in self.ranked:
@@ -190,7 +197,7 @@ class NexusApp:
         if self.demo and old and old != target.coin and not manual and not self._demo_reported:
             self._demo_reported = True  # demo: show the periodic report right away
             if self.bot:
-                self.notify(tg.top_text(self.ranked, 3, "Top 3 Most Profitable Coins right now"), "Top-3 market report")
+                self.notify(tg.top_text(self._healthy_first(), 3, "Top 3 Most Profitable Coins right now"), "Top-3 market report")
             else:
                 self.state.log("📨 Telegram not linked — `python main.py --link-telegram` sends this alert "
                                "+ a Top-3 report to your phone", ui.C_DIM)
@@ -315,7 +322,7 @@ class NexusApp:
         while True:
             await asyncio.sleep(hours * 3600)
             if self.bot and self.ranked:
-                self.notify(tg.top_text(self.ranked, 3, "Top 3 Most Profitable Coins right now"),
+                self.notify(tg.top_text(self._healthy_first(), 3, "Top 3 Most Profitable Coins right now"),
                             f"{hours:g}h market report")
 
     # -------------------------------------------------------------- donation
@@ -381,7 +388,7 @@ class NexusApp:
             except MarketDataError as e:
                 if not self.ranked:
                     return f"❌ Market data unavailable: {tg.esc(str(e)[:150])}"
-        return tg.top_text(self.ranked, n, f"Top {n} Most Profitable Coins right now")
+        return tg.top_text(self._healthy_first(), n, f"Top {n} Most Profitable Coins right now")
 
     async def request_switch(self, coin: str) -> str:
         target = next((p for p in self.ranked if p.coin == coin), None)

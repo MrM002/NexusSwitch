@@ -24,45 +24,61 @@ PID_FILE = LOG_DIR / "miner.pid"
 MINER_LOG = LOG_DIR / "miner.log"
 GRACEFUL_TIMEOUT = 8.0
 
-# Argument templates. Placeholders: {algo} {pool} {host} {port} {wallet} {worker}
+# Argument templates, checked against each miner's official documentation.
+# Placeholders: {algo} {pool} {host} {port} {url} {wallet} {worker}
+#   {pool} = host:port            {url} = stratum+tcp://host:port (stratum+ssl:// for TLS pools)
 # Each whitespace-separated token is formatted on its own, so values can never
 # break out into extra arguments. Override per coin with "args" in config.json.
+#   tls          : appended when the pool is given as "ssl://host:port"
+#   algo_extra   : appended for one algorithm
+#   coin_extra   : appended for one coin
+#   skip_coins   : coins that share the algorithm family on the market feed but
+#                  need a different miner algorithm / login (set "miner" + "args")
 MINERS: dict[str, dict[str, Any]] = {
-    "xmrig": {
+    "xmrig": {  # https://xmrig.com/docs/miner/command-line-options
         "label": "XMRig",
         "exe": ["xmrig.exe", "xmrig"],
-        "args": "-o {pool} -u {wallet} -p {worker} -a {algo} -k --no-color",
+        "args": "-o {pool} -u {wallet} -p {worker} --rig-id {worker} -a {algo} -k --no-color",
+        "tls": "--tls",
         "algos": {"randomx": "rx/0"},
+        "skip_coins": ["EPIC", "XDAG", "ETI"],
     },
-    "lolminer": {
+    "lolminer": {  # https://github.com/Lolliedieb/lolMiner-releases
         "label": "lolMiner",
         "exe": ["lolMiner.exe", "lolMiner"],
         "args": "--algo {algo} --pool {pool} --user {wallet}.{worker}",
+        "tls": "--tls on",
         "algos": {
             "beamhash3": "BEAM-III", "zhash": "EQUI144_5", "zelhash": "FLUX",
             "etchash": "ETCHASH", "autolykos2": "AUTOLYKOS2",
         },
+        # Equihash 144/5 needs a personalization string; "auto" asks the pool.
+        "algo_extra": {"zhash": "--pers auto"},
         "coin_extra": {"BTG": "--pers BgoldPoW", "BTCZ": "--pers BitcoinZ"},
     },
-    "rigel": {
+    "rigel": {  # https://github.com/rigelminer/rigel
         "label": "Rigel",
         "exe": ["rigel.exe", "rigel"],
-        "args": "-a {algo} -o stratum+tcp://{pool} -u {wallet} -w {worker}",
+        "args": "-a {algo} -o {url} -u {wallet} -w {worker}",
         "algos": {"kawpow": "kawpow", "autolykos2": "autolykos2", "etchash": "etchash"},
+        # documented --coin tickers: avoid DAG rebuilds around the dev-fee switch
+        "coin_extra": {"RVN": "--coin rvn", "QUAI": "--coin quai", "XNA": "--coin xna",
+                       "NEOX": "--coin neox", "ERG": "--coin erg"},
     },
-    "srbminer": {
+    "srbminer": {  # https://github.com/doktor83/SRBMiner-Multi (Parameters)
         "label": "SRBMiner-Multi",
         "exe": ["SRBMiner-MULTI.exe", "SRBMiner-MULTI"],
         "args": "--algorithm {algo} --pool {pool} --wallet {wallet}.{worker}",
-        "algos": {
-            "randomx": "randomx", "dynexsolve": "dynex", "astrobwt": "astrobwt/v3",
-            "autolykos2": "autolykos2", "kawpow": "kawpow", "etchash": "etchash",
-        },
+        "tls": "--tls true",
+        "algos": {"randomx": "randomx", "autolykos2": "autolykos2", "kawpow": "kawpow", "etchash": "etchash"},
+        "algo_extra": {"randomx": "--disable-gpu", "autolykos2": "--disable-cpu",
+                       "kawpow": "--disable-cpu", "etchash": "--disable-cpu"},
+        "skip_coins": ["EPIC", "XDAG", "ETI"],
     },
-    "trex": {
+    "trex": {  # https://github.com/trexminer/T-Rex (NVIDIA only)
         "label": "T-Rex",
         "exe": ["t-rex.exe", "t-rex"],
-        "args": "-a {algo} -o stratum+tcp://{pool} -u {wallet}.{worker} -p x",
+        "args": "-a {algo} -o {url} -u {wallet} -p x -w {worker}",
         "algos": {"kawpow": "kawpow", "etchash": "etchash", "autolykos2": "autolykos2"},
     },
 }
@@ -76,10 +92,29 @@ ALGO_MINERS: dict[str, list[str]] = {
     "zhash": ["lolminer"],
     "beamhash3": ["lolminer"],
     "zelhash": ["lolminer"],
-    "dynexsolve": ["srbminer"],
-    "astrobwt": ["srbminer"],
-    "equihash": [],  # ASIC territory: needs a per-coin "miner" + "args" override
+    # No bundled template: current SRBMiner-Multi releases dropped these, so
+    # they need a per-coin "miner" + "args" override in config.json.
+    "dynexsolve": [],
+    "astrobwt": [],
+    "equihash": [],  # ASIC territory
 }
+
+_TLS_SCHEMES = ("ssl://", "tls://", "stratum+ssl://", "stratum+tls://")
+_TCP_SCHEMES = ("tcp://", "stratum+tcp://", "stratum://")
+
+
+def parse_pool(value: str) -> tuple[str, str, bool]:
+    """``[ssl://]host:port`` -> (host, port, tls). Raises MinerError."""
+    pool = _safe(value, "pool")
+    low, tls = pool.lower(), False
+    for scheme in _TLS_SCHEMES + _TCP_SCHEMES:
+        if low.startswith(scheme):
+            pool, tls = pool[len(scheme):], scheme in _TLS_SCHEMES
+            break
+    host, _, port = pool.rpartition(":")
+    if not host or not port.isdigit() or "/" in host or host.startswith("-"):
+        raise MinerError(f"pool must be host:port or ssl://host:port (got {value!r})")
+    return host, port, tls
 
 
 class MinerError(Exception):
@@ -147,12 +182,11 @@ class MinerManager:
         ccfg = self.cfg["coins"].get(coin)
         if not ccfg or not str(ccfg.get("wallet", "")).strip():
             raise MinerError("no wallet")
-        pool = _safe(ccfg.get("pool", ""), "pool")
-        host, _, port = pool.rpartition(":")
-        if not host or not port.isdigit():
-            raise MinerError(f"pool must be host:port (got {pool!r})")
+        host, port, tls = parse_pool(ccfg.get("pool", ""))
+        pool = f"{host}:{port}"
         values = {
             "pool": pool, "host": host, "port": port,
+            "url": f"stratum+{'ssl' if tls else 'tcp'}://{pool}",
             "wallet": _safe(wallet or ccfg["wallet"], "wallet"),
             "worker": _safe(self.cfg.get("worker_name") or "nexus", "worker name"),
         }
@@ -162,13 +196,22 @@ class MinerManager:
             exe = str(self.cfg["miners"].get(name, "")).strip().strip('"')
             if not spec or not exe or not Path(exe).is_file():
                 continue
-            template = ccfg.get("args") or spec["args"]
+            custom = ccfg.get("args")
+            if not custom and coin in spec.get("skip_coins", ()):
+                continue  # same algorithm family, different miner setup
             malgo = spec["algos"].get(algo)
+            template = custom or spec["args"]
             if not malgo and "{algo}" in template:
                 continue
-            extra = "" if ccfg.get("args") else spec.get("coin_extra", {}).get(coin, "")
+            parts = [template]
+            if not custom:  # a custom template is used exactly as written
+                coin_extra = spec.get("coin_extra", {}).get(coin, "")
+                algo_extra = spec.get("algo_extra", {}).get(algo, "")
+                if coin_extra.startswith("--pers"):
+                    algo_extra = ""  # a coin-specific personalization replaces "auto"
+                parts += [spec.get("tls", "") if tls else "", algo_extra, coin_extra]
             try:
-                args = [tok.format(algo=malgo or "", **values) for tok in f"{template} {extra}".split()]
+                args = [tok.format(algo=malgo or "", **values) for tok in " ".join(parts).split()]
             except (KeyError, IndexError, ValueError) as e:
                 raise MinerError(f"bad args template for {coin}: {e}") from e
             return MinerPlan(name, spec["label"], exe, args)
